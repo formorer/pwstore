@@ -40,7 +40,7 @@ class GnuPG
     return outtxt, stderrtxt, statustxt
   end
 
-  def GnuPG.gpgcall(intxt, args)
+  def GnuPG.gpgcall(intxt, args, require_success = false)
     inR, inW = IO.pipe
     outR, outW = IO.pipe
     errR, errW = IO.pipe
@@ -62,13 +62,16 @@ class GnuPG
     errW.close
     statW.close
     (outtxt, stderrtxt, statustxt) = readwrite3(intxt, inW, outR, errR, statR);
-    Process.wait pid
-    return outtxt, stderrtxt, statustxt
+    wpid, status = Process.waitpid2 pid
+    throw "Unexpected pid: #{pid} vs #{wpid}" unless pid == wpid
+    throw "Process has not exited!?" unless status.exited?
+    throw "gpg call did not exit sucessfully" if (require_success and status.exitstatus != 0)
+    return outtxt, stderrtxt, statustxt, status.exitstatus
   end
 
   def GnuPG.init_keys()
     return if @@my_keys
-    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --list-secret-keys})
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --list-secret-keys}, true)
     @@my_keys = []
     outtxt.split("\n").each do |line|
       parts = line.split(':')
