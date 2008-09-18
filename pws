@@ -82,19 +82,25 @@ class GnuPG
 
   def GnuPG.init_keys()
     return if @@my_keys
-    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --list-secret-keys}, true)
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --with-fingerprint --list-secret-keys}, true)
     @@my_keys = []
+    @@my_fprs = []
     outtxt.split("\n").each do |line|
       parts = line.split(':')
       if (parts[0] == "ssb" or parts[0] == "sec")
         @@my_keys.push parts[4]
+      elsif (parts[0] == "fpr")
+        @@my_fprs.push parts[9]
       end
     end
   end
-
   def GnuPG.get_my_keys()
     init_keys
     @@my_keys
+  end
+  def GnuPG.get_my_fprs()
+    init_keys
+    @@my_fprs
   end
 end
 
@@ -118,8 +124,13 @@ def read_input(query, default_yes=true)
   end
 end
 
-class Config
+class GroupConfig
   def initialize
+    parse_file
+    expand_groups
+  end
+
+  def parse_file
     begin
       f = File.open('.users')
     rescue Exception => e
@@ -154,24 +165,32 @@ class Config
         @groups[group] = { "members" => members }
       end
     end
+  end
 
+  def is_group(name)
+    return (name =~ /^@/)
+  end
+  def check_exists(x, whence, fatal=true)
+    ok=true
+    if is_group(x)
+      ok=false unless (@groups.has_key?(x))
+    else
+      ok=false unless @users.has_key?(x)
+    end
+    unless ok
+      STDERR.puts( (fatal ? "Error: " : "Warning: ") + "#{whence} contains unknown member #{x}")
+      exit(1) if fatal
+    end
+    return ok
+  end
+  def expand_groups
     @groups.each_pair do |groupname, group|
       group['members'].each do |member|
-        if (member =~ /^@/)
-          unless (@groups.has_key?(member))
-            STDERR.puts "Group #{groupname} contains unknown member #{member}"
-            exit(1)
-          end
-        else
-          unless @users.has_key?(member)
-            STDERR.puts "Group #{groupname} contains unknown member #{member}"
-            exit(1)
-          end
-        end
+        check_exists(member, "Group #{groupname}")
       end
       group['members_to_do'] = group['members'].clone
     end
- 
+
     while true
       had_progress = false
       all_expanded = true
@@ -180,7 +199,7 @@ class Config
 
         still_contains_groups = false
         group['members_to_do'].each do |member|
-          if (member =~ /^@/)
+          if is_group(member)
             if @groups[member]['members_to_do'].size == 0
               group['keys'].concat @groups[member]['keys']
               group['members_to_do'].delete(member)
@@ -203,6 +222,23 @@ class Config
         exit(1)
       end
     end
+  end
+
+  def expand_targets(targets)
+    fprs = []
+    ok = true
+    targets.each do |t|
+      unless check_exists(t, "access line", false)
+        ok = false
+        next
+      end
+      if is_group(t)
+        fprs.concat @groups[t]['keys']
+      else
+        fprs.push @users[t]
+      end
+    end
+    return ok, fprs
   end
 end
 
@@ -230,11 +266,13 @@ class EncryptedFile
     metaline = text.split("\n").first
     m = /^access: (.*)/.match metaline
     return [] unless m
-    return m[1].strip.split(/\s+/)
+    return m[1].strip.split(/[\t ,]+/)
   end
 
 
   def initialize(filename)
+    @groupconfig = GroupConfig.new
+
     @filename = filename
     unless FileTest.readable?(filename)
       @accessible = false
@@ -263,6 +301,24 @@ class EncryptedFile
     return outtxt
   end
 
+  def encrypt(content, recipients)
+    args = recipients.collect{ |r| "--recipient=#{r}"}
+    args.push "--encrypt"
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
+
+    if exitstatus != 0
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed (or try again)?")
+      return false unless proceed
+    elsif outtxt.length == 0
+      tryagain = read_input("Error: #{@filename} decrypted to an empty file.  Edit again (or exit)?")
+      return false if tryagain
+      exit(0)
+    end
+
+    return true, outtxt
+  end
+
+
   def write_back(content)
     targets = EncryptedFile.targets(content)
     if targets.size == 0
@@ -271,8 +327,21 @@ class EncryptedFile
       exit(0)
     end
 
-    Config.new
-    #expanded = GnuPG.expand_targets(targets)
+    ok, expanded = @groupconfig.expand_targets(targets)
+    if (expanded.size == 0)
+      tryagain = read_input("Errors in access header.  Edit again (or exit)?", true)
+      return false if tryagain
+      exit(0)
+    elsif (not ok)
+      tryagain = read_input("Warnings in access header.  Edit again (or continue)?", true)
+      return false if tryagain
+    end
+
+    ok, encrypted = encrypt(content, expanded)
+    return false unless ok
+
+    File.open(@filename,"w").write(encrypted)
+    return true
   end
 end
 
