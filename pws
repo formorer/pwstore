@@ -480,12 +480,34 @@ class Ed
   end
 end
 
-case ARGV.shift
-  when 'ls': Ls.new
-  when 'ed': Ed.new
-  else
-    STDERR.puts "What!?"
+
+def help(code=0, io=STDOUT)
+  io.puts "Usage: #{$program_name} ed"
+  io.puts "       #{$program_name} ls"
+  io.puts "       #{$program_name} help"
+  io.puts "Call #{$program_name} <command> --help for additional options/parameters"
+  exit(code)
 end
+
+
+def parse_command
+  case ARGV.shift
+    when 'ls': Ls.new
+    when 'ed': Ed.new
+    when 'help': 
+      case ARGV.length
+        when 0: help
+        when 1:
+          ARGV.push "--help"
+          parse_command
+        else help(1, STDERR)
+      end
+    else
+      help(1, STDERR)
+  end
+end
+
+parse_command
 
 # vim:set shiftwidth=2:
 # vim:set et:
