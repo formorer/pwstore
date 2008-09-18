@@ -270,8 +270,9 @@ class EncryptedFile
   end
 
 
-  def initialize(filename)
+  def initialize(filename, new=false)
     @groupconfig = GroupConfig.new
+    @new = new
 
     @filename = filename
     unless FileTest.readable?(filename)
@@ -290,10 +291,10 @@ class EncryptedFile
 
   def decrypt
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt})
-    if exitstatus != 0
+    if !@new and exitstatus != 0
       proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed?")
       exit(0) unless proceed
-    elsif outtxt.length == 0
+    elsif !@new and outtxt.length == 0
       proceed = read_input("Warning: #{@filename} decrypted to an empty file.  Proceed?")
       exit(0) unless proceed
     end
@@ -303,11 +304,12 @@ class EncryptedFile
 
   def encrypt(content, recipients)
     args = recipients.collect{ |r| "--recipient=#{r}"}
+    args.push "--trust-model=always"
     args.push "--encrypt"
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
 
     if exitstatus != 0
-      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed (or try again)?")
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when encrypting #{@filename}.  Proceed (or try again)?")
       return false unless proceed
     elsif outtxt.length == 0
       tryagain = read_input("Error: #{@filename} decrypted to an empty file.  Edit again (or exit)?")
@@ -412,13 +414,13 @@ class Ed
   end
 
   def edit(filename)
-    f = EncryptedFile.new(filename)
-    if !f.readable && !@force
+    encrypted_file = EncryptedFile.new(filename, @new)
+    if !@new and !encrypted_file.readable && !@force
       STDERR.puts "#{filename} is probably not readable"
       exit(1)
     end
 
-    content = f.decrypt
+    content = encrypted_file.decrypt
     while true
       oldsize = content.length
       tempfile = Tempfile.open('pws')
@@ -447,7 +449,7 @@ class Ed
         exit(0) unless proceed
       end
 
-      success = f.write_back(content)
+      success = encrypted_file.write_back(content)
       break if success
     end
   end
@@ -455,21 +457,29 @@ class Ed
   def initialize()
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-n", "--new" , "Edit new file") { |@new| }
       opts.on_tail("-f", "--force" , "Spawn an editor even if the file is probably not readable") { |@force| }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length != 1
     filename = ARGV.shift
 
-    if !FileTest.exists?(filename)
-      STDERR.puts "#{filename} does not exist"
-      exit(1)
-    elsif !FileTest.file?(filename)
-      STDERR.puts "#{filename} is not a regular file"
-      exit(1)
-    elsif !FileTest.readable?(filename)
-      STDERR.puts "#{filename} is not accessible (unix perms)"
-      exit(1)
+    if @new
+      if FileTest.exists?(filename)
+        STDERR.puts "#{filename} does exist"
+        exit(1)
+      end
+    else
+      if !FileTest.exists?(filename)
+        STDERR.puts "#{filename} does not exist"
+        exit(1)
+      elsif !FileTest.file?(filename)
+        STDERR.puts "#{filename} is not a regular file"
+        exit(1)
+      elsif !FileTest.readable?(filename)
+        STDERR.puts "#{filename} is not accessible (unix perms)"
+        exit(1)
+      end
     end
 
     dirname = File.dirname(filename)
