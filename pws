@@ -1,8 +1,100 @@
 #!/usr/bin/ruby
 
 require 'optparse'
+require 'thread'
+
+Thread.abort_on_exception = true
+
+GNUPG = "/usr/bin/gpg"
 
 $program_name = File.basename($0, '.*')
+
+
+class GnuPG
+  def GnuPG.readwrite3(intxt, infd, stdoutfd, stderrfd, statusfd)
+    outtxt, stderrtxt, statustxt = ''
+    thread_in = Thread.new {
+      infd.print intxt
+      infd.close
+    }
+    thread_out = Thread.new {
+      outtxt = stdoutfd.read
+      stdoutfd.close
+    }
+    thread_err = Thread.new {
+      errtxt = stderrfd.read
+      stderrfd.close
+    }
+    thread_status = Thread.new {
+      statustxt = statusfd.read
+      statusfd.close
+    } if (statusfd)
+
+    thread_in.join
+    thread_out.join
+    thread_err.join
+    thread_status.join if thread_status
+
+    return outtxt, stderrtxt, statustxt
+  end
+
+  def GnuPG.gpgcall(intxt, args)
+    inR, inW = IO.pipe
+    outR, outW = IO.pipe
+    errR, errW = IO.pipe
+    statR, statW = IO.pipe
+
+    pid = Kernel.fork do
+      inW.close
+      outR.close
+      errR.close
+      statR.close
+      STDIN.reopen(inR)
+      STDOUT.reopen(outW)
+      STDERR.reopen(errW)
+      exec(GNUPG, "--status-fd=#{statW.fileno}",  *args)
+      raise ("Calling gnupg failed")
+    end
+    inR.close
+    outW.close
+    errW.close
+    statW.close
+    (outtxt, stderrtxt, statustxt) = readwrite3(intxt, inW, outR, errR, statR);
+    Process.wait pid
+    return outtxt, stderrtxt, statustxt
+  end
+
+  def GnuPG.list_readers(filename)
+    content = File.read(filename)
+    (outtxt, stderrtxt, statustxt) = gpgcall(content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
+    readers = []
+    statustxt.split("\n").each do |line|
+      m = /^\[GNUPG:\] ENC_TO ([0-9A-F]+)/.match line
+      next unless m
+      readers.push m[1]
+    end
+    return readers
+  end
+
+  def initialize()
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --list-secret-keys})
+    @my_keys = []
+    outtxt.split("\n").each do |line|
+      parts = line.split(':')
+      if (parts[0] == "ssb" or parts[0] == "sec")
+        @my_keys.push parts[4]
+      end
+    end
+  end
+
+  def can_read(filename)
+    readers = GnuPG.list_readers(filename)
+    @my_keys.each do |k|
+      return true if readers.include?(k)
+    end
+    return false
+  end
+end
 
 class Ls
   def help(parser, code=0, io=STDOUT)
@@ -15,6 +107,8 @@ class Ls
   end
 
   def ls_dir(d)
+    g = GnuPG.new
+
     begin
       dir = Dir.open(d)
     rescue Exception => e
@@ -26,13 +120,19 @@ class Ls
       next if (filename =~ /^\./) and not @all
       stat = File::Stat.new(filename)
       if stat.symlink?
-        puts "(sym)    #{filename}"
+        puts "(sym)      #{filename}"
       elsif stat.directory?
-        puts "(dir)    #{filename}"
+        puts "(dir)      #{filename}"
       elsif !stat.file?
-        puts "(other)  #{filename}"
+        puts "(other)    #{filename}"
       else
-        puts "(file)   #{filename}"
+        readable = g.can_read(filename)
+        if readable
+          puts "(ok)       #{filename}"
+        else
+          puts "(locked)   #{filename}"
+        end
+        #puts "(file)   #{filename}"
       end
     end
   end
