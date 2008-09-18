@@ -401,6 +401,10 @@ class Ls
     end
     puts "#{dirname}:"
     Dir.chdir(dirname) do
+      unless FileTest.exists?(".users")
+        STDERR.puts "The .users file does not exists here.  This is not a password store, is it?"
+        exit(1)
+      end
       dir.sort.each do |filename|
         next if (filename =~ /^\./) and not (@all >= 3)
         stat = File::Stat.new(filename)
