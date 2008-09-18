@@ -1,0 +1,57 @@
+#!/usr/bin/ruby
+
+require 'optparse'
+
+$program_name = File.basename($0, '.*')
+
+class Ls
+  def help(parser, code=0, io=STDOUT)
+    io.puts "Usage: #{$program_name} ls [<directory> ...]"
+    io.puts parser.summarize
+    io.puts "Lists the contents of the given directory/directories, or the current"
+    io.puts "directory if none is given.  For each file show whether it is PGP-encrypted"
+    io.puts "file, and if yes whether we can read it."
+    exit(code)
+  end
+
+  def ls_dir(d)
+    begin
+      dir = Dir.open(d)
+    rescue Exception => e
+      STDERR.puts e
+      return
+    end
+    puts "#{d}:"
+    dir.each do |filename|
+      next if (filename =~ /^\./) and not @all
+      stat = File::Stat.new(filename)
+      if stat.symlink?
+        puts "(sym)    #{filename}"
+      elsif stat.directory?
+        puts "(dir)    #{filename}"
+      elsif !stat.file?
+        puts "(other)  #{filename}"
+      else
+        puts "(file)   #{filename}"
+      end
+    end
+  end
+
+  def initialize()
+    ARGV.options do |opts|
+      opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-a", "--all" , "Show all files") { |@all| }
+      opts.parse!
+    end
+
+    dirs = ARGV
+    dirs.push('.') unless dirs.size > 0
+    dirs.each { |dir| ls_dir(dir) }
+  end
+end
+
+case ARGV.shift
+  when 'ls': Ls.new
+  else
+    STDERR.puts "What!?"
+end
