@@ -88,9 +88,14 @@ class GnuPG
 end
 
 class EncryptedFile
-  attr_reader :readable, :encrypted
+  attr_reader :accessible, :encrypted, :readable
 
   def initialize(filename)
+    unless FileTest.readable?(filename)
+      @accessible = false
+      return
+    end
+    @accessible = true
     content = File.read(filename)
     (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
     @encrypted = !(statustxt =~ /\[GNUPG:\] NODATA/)
@@ -148,14 +153,14 @@ class Ls
           puts "(other)    #{filename}" if (@all >= 2)
         else
           f = EncryptedFile.new(filename)
-          if f.encrypted
-            if f.readable
-              puts "(ok)       #{filename}"
-            else
-              puts "(locked)   #{filename}" if (@all >= 1)
-            end
-          else
+          if !f.accessible
+            puts "(!perm)    #{filename}"
+          elsif !f.encrypted
             puts "(file)     #{filename}" if (@all >= 2)
+          elsif f.readable
+            puts "(ok)       #{filename}"
+          else
+            puts "(locked)   #{filename}" if (@all >= 1)
           end
         end
       end
