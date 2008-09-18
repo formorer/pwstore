@@ -2,13 +2,24 @@
 
 require 'optparse'
 require 'thread'
+require 'tempfile'
 
+require 'yaml'
 Thread.abort_on_exception = true
 
 GNUPG = "/usr/bin/gpg"
 
 $program_name = File.basename($0, '.*')
 
+$editor = ENV['EDITOR']
+if $editor == nil
+  %w{/usr/bin/sensible-editor /usr/bin/editor /usr/bin/vi}.each do |editor|
+    if FileTest.executable?(editor)
+      $editor = editor
+      break
+    end
+  end
+end
 
 class GnuPG
   @@my_keys = nil
@@ -87,23 +98,116 @@ class GnuPG
   end
 end
 
-class EncryptedFile
-  attr_reader :accessible, :encrypted, :readable
+def read_input(query, default_yes=true)
+  if default_yes
+    append = '[Y/n]'
+  else
+    append = '[y/N]'
+  end
 
-  def initialize(filename)
-    unless FileTest.readable?(filename)
-      @accessible = false
-      return
-    end
-    @accessible = true
-    content = File.read(filename)
-    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
-    @encrypted = !(statustxt =~ /\[GNUPG:\] NODATA/)
-    if @encrypted
-      @readers = EncryptedFile.list_readers(statustxt)
-      @readable = EncryptedFile.determine_readable(@readers)
+  while true
+    print "#{query} #{append} "
+    i = STDIN.readline.chomp.downcase
+    if i==""
+      return default_yes
+    elsif i=="y"
+      return true
+    elsif i=="n"
+      return false
     end
   end
+end
+
+class Config
+  def initialize
+    begin
+      f = File.open('.users')
+    rescue Exception => e
+      STDERR.puts e
+      exit(1)
+    end
+
+    @users = {}
+    @groups = {}
+
+    lno = 0
+    f.readlines.each do |line|
+      lno = lno+1
+      next if line =~ /^$/
+      next if line =~ /^#/
+      if (m = /^([a-zA-Z0-9-]+)\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
+        user = m[1]
+        fpr = m[2]
+        if @users.has_key?(user)
+          STDERR.puts "User #{user} redefined at line #{lno}!"
+          exit(1)
+        end
+        @users[user] = fpr
+      elsif (m = /^(@[a-zA-Z0-9-]+)\s*=\s*(.*)$/.match line)
+        group = m[1]
+        members = m[2].strip
+        if @groups.has_key?(group)
+          STDERR.puts "Group #{group} redefined at line #{lno}!"
+          exit(1)
+        end
+        members = members.split(/[\t ,]+/)
+        @groups[group] = { "members" => members }
+      end
+    end
+
+    @groups.each_pair do |groupname, group|
+      group['members'].each do |member|
+        if (member =~ /^@/)
+          unless (@groups.has_key?(member))
+            STDERR.puts "Group #{groupname} contains unknown member #{member}"
+            exit(1)
+          end
+        else
+          unless @users.has_key?(member)
+            STDERR.puts "Group #{groupname} contains unknown member #{member}"
+            exit(1)
+          end
+        end
+      end
+      group['members_to_do'] = group['members'].clone
+    end
+ 
+    while true
+      had_progress = false
+      all_expanded = true
+      @groups.each_pair do |groupname, group|
+        group['keys'] = [] unless group['keys'] 
+
+        still_contains_groups = false
+        group['members_to_do'].each do |member|
+          if (member =~ /^@/)
+            if @groups[member]['members_to_do'].size == 0
+              group['keys'].concat @groups[member]['keys']
+              group['members_to_do'].delete(member)
+              had_progress = true
+            else
+              still_contains_groups = true
+            end
+          else
+            group['keys'].push @users[member]
+            group['members_to_do'].delete(member)
+            had_progress = true
+          end
+        end
+        all_expanded = false if still_contains_groups
+      end
+      break if all_expanded
+      unless had_progress
+        cyclic_groups = @groups.keys.reject{|name| @groups[name]['members_to_do'].size == 0}.join(", ")
+        STDERR.puts "Cyclic group memberships in #{cyclic_groups}?"
+        exit(1)
+      end
+    end
+  end
+end
+
+class EncryptedFile
+  attr_reader :accessible, :encrypted, :readable
 
   def EncryptedFile.determine_readable(readers)
     GnuPG.get_my_keys.each do |keyid|
@@ -120,6 +224,55 @@ class EncryptedFile
       readers.push m[1]
     end
     return readers
+  end
+
+  def EncryptedFile.targets(text)
+    metaline = text.split("\n").first
+    m = /^access: (.*)/.match metaline
+    return [] unless m
+    return m[1].strip.split(/\s+/)
+  end
+
+
+  def initialize(filename)
+    @filename = filename
+    unless FileTest.readable?(filename)
+      @accessible = false
+      return
+    end
+    @accessible = true
+    @encrypted_content = File.read(filename)
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(@encrypted_content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
+    @encrypted = !(statustxt =~ /\[GNUPG:\] NODATA/)
+    if @encrypted
+      @readers = EncryptedFile.list_readers(statustxt)
+      @readable = EncryptedFile.determine_readable(@readers)
+    end
+  end
+
+  def decrypt
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt})
+    if exitstatus != 0
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed?")
+      exit(0) unless proceed
+    elsif outtxt.length == 0
+      proceed = read_input("Warning: #{@filename} decrypted to an empty file.  Proceed?")
+      exit(0) unless proceed
+    end
+
+    return outtxt
+  end
+
+  def write_back(content)
+    targets = EncryptedFile.targets(content)
+    if targets.size == 0
+      tryagain = read_input("Warning: Did not find targets to encrypt to in header.  Try again (or exit)?", true)
+      return false if tryagain
+      exit(0)
+    end
+
+    Config.new
+    #expanded = GnuPG.expand_targets(targets)
   end
 end
 
@@ -181,8 +334,86 @@ class Ls
   end
 end
 
+class Ed
+  def help(parser, code=0, io=STDOUT)
+    io.puts "Usage: #{$program_name} ed <filename>"
+    io.puts parser.summarize
+    io.puts "Decrypts the file, spawns an editor, and encrypts it again"
+    exit(code)
+  end
+
+  def edit(filename)
+    f = EncryptedFile.new(filename)
+    if !f.readable && !@force
+      STDERR.puts "#{filename} is probably not readable"
+      exit(1)
+    end
+
+    content = f.decrypt
+    while true
+      oldsize = content.length
+      tempfile = Tempfile.open('pws')
+      tempfile.puts content
+      tempfile.flush
+      system($editor, tempfile.path)
+      status = $?
+      throw "Process has not exited!?" unless status.exited?
+      unless status.exitstatus == 0
+        proceed = read_input("Warning: Editor did not exit successfully (exit code #{status.exitstatus}.  Proceed?")
+        exit(0) unless proceed
+      end
+      tempfile.seek(0, IO::SEEK_SET)
+      content = tempfile.read
+
+      # zero the file
+      newsize = content.length
+      tempfile.seek(0, IO::SEEK_SET)
+      clearsize = (newsize > oldsize) ? newsize : oldsize
+      tempfile.print "\0"*clearsize
+      tempfile.fsync
+      tempfile.close(true)
+
+      if content.length == 0
+        proceed = read_input("Warning: Content is now empty.  Proceed?")
+        exit(0) unless proceed
+      end
+
+      success = f.write_back(content)
+      break if success
+    end
+  end
+
+  def initialize()
+    ARGV.options do |opts|
+      opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-f", "--force" , "Spawn an editor even if the file is probably not readable") { |@force| }
+      opts.parse!
+    end
+    help(ARGV.options, 1, STDERR) if ARGV.length != 1
+    filename = ARGV.shift
+
+    if !FileTest.exists?(filename)
+      STDERR.puts "#{filename} does not exist"
+      exit(1)
+    elsif !FileTest.file?(filename)
+      STDERR.puts "#{filename} is not a regular file"
+      exit(1)
+    elsif !FileTest.readable?(filename)
+      STDERR.puts "#{filename} is not accessible (unix perms)"
+      exit(1)
+    end
+
+    dirname = File.dirname(filename)
+    basename = File.basename(filename)
+    Dir.chdir(dirname) {
+      edit(basename)
+    }
+  end
+end
+
 case ARGV.shift
   when 'ls': Ls.new
+  when 'ed': Ed.new
   else
     STDERR.puts "What!?"
 end
