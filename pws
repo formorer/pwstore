@@ -11,6 +11,8 @@ $program_name = File.basename($0, '.*')
 
 
 class GnuPG
+  @@my_keys = nil
+
   def GnuPG.readwrite3(intxt, infd, stdoutfd, stderrfd, statusfd)
     outtxt, stderrtxt, statustxt = ''
     thread_in = Thread.new {
@@ -64,9 +66,45 @@ class GnuPG
     return outtxt, stderrtxt, statustxt
   end
 
-  def GnuPG.list_readers(filename)
+  def GnuPG.init_keys()
+    return if @@my_keys
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --list-secret-keys})
+    @@my_keys = []
+    outtxt.split("\n").each do |line|
+      parts = line.split(':')
+      if (parts[0] == "ssb" or parts[0] == "sec")
+        @@my_keys.push parts[4]
+      end
+    end
+  end
+
+  def GnuPG.get_my_keys()
+    init_keys
+    @@my_keys
+  end
+end
+
+class EncryptedFile
+  attr_reader :readable, :encrypted
+
+  def initialize(filename)
     content = File.read(filename)
-    (outtxt, stderrtxt, statustxt) = gpgcall(content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
+    @encrypted = !(statustxt =~ /\[GNUPG:\] NODATA/)
+    if @encrypted
+      @readers = EncryptedFile.list_readers(statustxt)
+      @readable = EncryptedFile.determine_readable(@readers)
+    end
+  end
+
+  def EncryptedFile.determine_readable(readers)
+    GnuPG.get_my_keys.each do |keyid|
+      return true if readers.include?(keyid)
+    end
+    return false
+  end
+
+  def EncryptedFile.list_readers(statustxt)
     readers = []
     statustxt.split("\n").each do |line|
       m = /^\[GNUPG:\] ENC_TO ([0-9A-F]+)/.match line
@@ -74,25 +112,6 @@ class GnuPG
       readers.push m[1]
     end
     return readers
-  end
-
-  def initialize()
-    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', %w{--fast-list-mode --with-colons --list-secret-keys})
-    @my_keys = []
-    outtxt.split("\n").each do |line|
-      parts = line.split(':')
-      if (parts[0] == "ssb" or parts[0] == "sec")
-        @my_keys.push parts[4]
-      end
-    end
-  end
-
-  def can_read(filename)
-    readers = GnuPG.list_readers(filename)
-    @my_keys.each do |k|
-      return true if readers.include?(k)
-    end
-    return false
   end
 end
 
@@ -106,41 +125,45 @@ class Ls
     exit(code)
   end
 
-  def ls_dir(d)
-    g = GnuPG.new
-
+  def ls_dir(dirname)
     begin
-      dir = Dir.open(d)
+      dir = Dir.open(dirname)
     rescue Exception => e
       STDERR.puts e
       return
     end
-    puts "#{d}:"
-    dir.each do |filename|
-      next if (filename =~ /^\./) and not @all
-      stat = File::Stat.new(filename)
-      if stat.symlink?
-        puts "(sym)      #{filename}"
-      elsif stat.directory?
-        puts "(dir)      #{filename}"
-      elsif !stat.file?
-        puts "(other)    #{filename}"
-      else
-        readable = g.can_read(filename)
-        if readable
-          puts "(ok)       #{filename}"
+    puts "#{dirname}:"
+    Dir.chdir(dirname) do
+      dir.sort.each do |filename|
+        next if (filename =~ /^\./) and not (@all >= 3)
+        stat = File::Stat.new(filename)
+        if stat.symlink?
+          puts "(sym)      #{filename}" if (@all >= 2)
+        elsif stat.directory?
+          puts "(dir)      #{filename}" if (@all >= 2)
+        elsif !stat.file?
+          puts "(other)    #{filename}" if (@all >= 2)
         else
-          puts "(locked)   #{filename}"
+          f = EncryptedFile.new(filename)
+          if f.encrypted
+            if f.readable
+              puts "(ok)       #{filename}"
+            else
+              puts "(locked)   #{filename}" if (@all >= 1)
+            end
+          else
+            puts "(file)     #{filename}" if (@all >= 2)
+          end
         end
-        #puts "(file)   #{filename}"
       end
     end
   end
 
   def initialize()
+    @all = 0
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
-      opts.on_tail("-a", "--all" , "Show all files") { |@all| }
+      opts.on_tail("-a", "--all" , "Show all files (use up to 3 times to show even more than all)") { @all = @all+1 }
       opts.parse!
     end
 
@@ -155,3 +178,7 @@ case ARGV.shift
   else
     STDERR.puts "What!?"
 end
+
+# vim:set shiftwidth=2:
+# vim:set et:
+# vim:set ts=2:
