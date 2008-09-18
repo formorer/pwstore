@@ -315,7 +315,7 @@ class EncryptedFile
   def decrypt
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt})
     if !@new and exitstatus != 0
-      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed?")
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed?", false)
       exit(0) unless proceed
     elsif !@new and outtxt.length == 0
       proceed = read_input("Warning: #{@filename} decrypted to an empty file.  Proceed?")
@@ -460,6 +460,7 @@ class Ed
     end
 
     content = encrypted_file.decrypt
+    original_content = content
     while true
       oldsize = content.length
       tempfile = Tempfile.open('pws')
@@ -485,6 +486,11 @@ class Ed
 
       if content.length == 0
         proceed = read_input("Warning: Content is now empty.  Proceed?")
+        exit(0) unless proceed
+      end
+
+      if (original_content == content)
+        proceed = read_input("Nothing changed.  Re-encrypt anyway?", false)
         exit(0) unless proceed
       end
 
