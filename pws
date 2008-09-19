@@ -46,6 +46,8 @@ end
 
 class GnuPG
   @@my_keys = nil
+  @@my_fprs = nil
+  @@keyid_fpr_mapping = {}
 
   def GnuPG.readwrite3(intxt, infd, stdoutfd, stderrfd, statusfd)
     outtxt, stderrtxt, statustxt = ''
@@ -117,13 +119,57 @@ class GnuPG
       end
     end
   end
+  # This is for my private keys, so we can tell if a file is encrypted to us
   def GnuPG.get_my_keys()
     init_keys
     @@my_keys
   end
+  # And this is for my private keys also, so we can tell if we are encrypting to ourselves
   def GnuPG.get_my_fprs()
     init_keys
     @@my_fprs
+  end
+
+  # This maps public keyids to fingerprints, so we can figure
+  # out if a file that is encrypted to a bunch of keys is
+  # encrypted to the fingerprints it should be encrypted to
+  def GnuPG.get_fpr_from_keyid(keyid)
+    fpr = @@keyid_fpr_mapping[keyid]
+    # this can be null, if we tried to find the fpr but failed to find the key in our keyring
+    unless fpr
+      STDERR.puts "Warning: No key found for keyid #{keyid}"
+    end
+    return fpr
+  end
+  def GnuPG.get_fprs_from_keyids(keyids)
+    learn_fingerprints_from_keyids(keyids)
+    return keyids.collect{ |k| get_fpr_from_keyid(k) }
+  end
+
+  # this is to load the keys we will soon be asking about into
+  # our keyid-fpr-mapping hash
+  def GnuPG.learn_fingerprints_from_keyids(keyids)
+    need_to_learn = keyids.reject{ |k| @@keyid_fpr_mapping.has_key?(k) }
+    if need_to_learn.size > 0
+      args = %w{--fast-list-mode --with-colons --with-fingerprint --list-keys}
+      args.concat need_to_learn
+      (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', args, true)
+
+      pub = nil
+      fpr = nil
+      outtxt.split("\n").each do |line|
+        parts = line.split(':')
+        if (parts[0] == "pub")
+          pub = parts[4]
+        elsif (parts[0] == "fpr")
+          fpr = parts[9]
+          @@keyid_fpr_mapping[pub] = fpr
+        elsif (parts[0] == "sub")
+          @@keyid_fpr_mapping[parts[4]] = fpr
+        end
+      end
+    end
+    need_to_learn.reject{ |k| @@keyid_fpr_mapping.has_key?(k) }.each { |k| @@keyid_fpr_mapping[k] = nil }
   end
 end
 
@@ -261,12 +307,12 @@ class GroupConfig
         fprs.push @users[t]
       end
     end
-    return ok, fprs
+    return ok, fprs.uniq
   end
 end
 
 class EncryptedFile
-  attr_reader :accessible, :encrypted, :readable
+  attr_reader :accessible, :encrypted, :readable, :readers
 
   def EncryptedFile.determine_readable(readers)
     GnuPG.get_my_keys.each do |keyid|
@@ -344,7 +390,7 @@ class EncryptedFile
   end
 
 
-  def write_back(content)
+  def determine_encryption_targets(content)
     targets = EncryptedFile.targets(content)
     if targets.size == 0
       tryagain = read_input("Warning: Did not find targets to encrypt to in header.  Try again (or exit)?", true)
@@ -374,7 +420,11 @@ class EncryptedFile
       return false if tryagain
     end
 
-    ok, encrypted = encrypt(content, expanded)
+    return true, expanded
+  end
+
+  def write_back(content, targets)
+    ok, encrypted = encrypt(content, targets)
     return false unless ok
 
     File.open(@filename,"w").write(encrypted)
@@ -459,6 +509,8 @@ class Ed
       exit(1)
     end
 
+    encrypted_to = GnuPG.get_fprs_from_keyids(encrypted_file.readers).sort
+
     content = encrypted_file.decrypt
     original_content = content
     while true
@@ -489,12 +541,19 @@ class Ed
         exit(0) unless proceed
       end
 
+      ok, targets = encrypted_file.determine_encryption_targets(content)
+      next unless ok
+
       if (original_content == content)
-        proceed = read_input("Nothing changed.  Re-encrypt anyway?", false)
-        exit(0) unless proceed
+        if (targets.sort == encrypted_to)
+          proceed = read_input("Nothing changed.  Re-encrypt anyway?", false)
+          exit(0) unless proceed
+        else
+          STDERR.puts("Info: Content not changed but re-encrypting anyway because the list of keys changed")
+        end
       end
 
-      success = encrypted_file.write_back(content)
+      success = encrypted_file.write_back(content, targets)
       break if success
     end
   end
