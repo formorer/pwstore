@@ -388,6 +388,9 @@ class EncryptedFile
   def initialize(filename, new=false)
     @groupconfig = GroupConfig.new
     @new = new
+    if @new
+      @readers = []
+    end
 
     @filename = filename
     unless FileTest.readable?(filename)
@@ -423,13 +426,24 @@ class EncryptedFile
     args.push "--encrypt"
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
 
-    if exitstatus != 0
-      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when encrypting #{@filename}.  Proceed (or try again)?")
-      return false unless proceed
-    elsif outtxt.length == 0
-      tryagain = read_input("Error: #{@filename} decrypted to an empty file.  Edit again (or exit)?")
+    invalid = []
+    statustxt.split("\n").each do |line|
+      m = /^\[GNUPG:\] INV_RECP \S+ ([0-9A-F]+)/.match line
+      next unless m
+      invalid.push m[1]
+    end
+    if invalid.size > 0
+      again = read_input("Warning: the following recipients are invalid: #{invalid.join(", ")}. Try again (or proceed)?")
+      return false if again
+    end
+    if outtxt.length == 0
+      tryagain = read_input("Error: #{@filename} encrypted to an empty file.  Edit again (or exit)?")
       return false if tryagain
       exit(0)
+    end
+    if exitstatus != 0
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when encrypting #{@filename}. Said:\n#{stderrtxt}\n#{statustxt}\n\nProceed (or try again)?")
+      return false unless proceed
     end
 
     return true, outtxt
