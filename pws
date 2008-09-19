@@ -402,7 +402,7 @@ class EncryptedFile
     end
     @accessible = true
     @encrypted_content = File.read(filename)
-    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(@encrypted_content, %w{--with-colons --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
+    (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(@encrypted_content, %w{--with-colons --no-options --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
     @encrypted = !(statustxt =~ /\[GNUPG:\] NODATA/)
     if @encrypted
       @readers = EncryptedFile.list_readers(statustxt)
