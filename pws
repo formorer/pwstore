@@ -199,6 +199,47 @@ class GroupConfig
     expand_groups
   end
 
+  def verify(content)
+    begin
+      f = File.open(ENV['HOME']+'/.pws-trusted-users')
+    rescue Exception => e
+      STDERR.puts e
+      exit(1)
+    end
+
+    trusted = []
+    f.readlines.each do |line|
+      line.chomp!
+      next if line =~ /^$/
+      next if line =~ /^#/
+
+      trusted.push line
+    end
+
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, %w{}, true)
+    goodsig = false
+    validsig = nil
+    statustxt.split("\n").each do |line|
+      if m = /^\[GNUPG:\] GOODSIG/.match(line)
+        goodsig = true
+      elsif m = /^\[GNUPG:\] VALIDSIG \S+ \S+ \S+ \S+ \S+ \S+ \S+ \S+ \S+ ([0-9A-F]+)/.match(line)
+        validsig = m[1]
+      end
+    end
+
+    if not goodsig
+      STDERR.puts ".users file is not signed properly"
+      exit(1)
+    end
+
+    if not trusted.include?(validsig)
+      STDERR.puts ".users file is signed by #{validsig} which is not in ~/.pws-trusted-users"
+      exit(1)
+    end
+
+    return outtxt
+  end
+
   def parse_file
     begin
       f = File.open('.users')
@@ -207,11 +248,16 @@ class GroupConfig
       exit(1)
     end
 
+    users = f.read
+    f.close
+
+    users = verify(users)
+
     @users = {}
     @groups = {}
 
     lno = 0
-    f.readlines.each do |line|
+    users.split("\n").each do |line|
       lno = lno+1
       next if line =~ /^$/
       next if line =~ /^#/
