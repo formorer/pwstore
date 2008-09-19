@@ -143,7 +143,7 @@ class GnuPG
   end
   def GnuPG.get_fprs_from_keyids(keyids)
     learn_fingerprints_from_keyids(keyids)
-    return keyids.collect{ |k| get_fpr_from_keyid(k) }
+    return keyids.collect{ |k| get_fpr_from_keyid(k) or "unknown" }
   end
 
   # this is to load the keys we will soon be asking about into
@@ -151,7 +151,10 @@ class GnuPG
   def GnuPG.learn_fingerprints_from_keyids(keyids)
     need_to_learn = keyids.reject{ |k| @@keyid_fpr_mapping.has_key?(k) }
     if need_to_learn.size > 0
-      args = %w{--fast-list-mode --with-colons --with-fingerprint --list-keys}
+      # we can't use --fast-list-mode here because GnuPG is broken
+      # and does not show elmo's fingerprint in a call like
+      # gpg --with-colons --fast-list-mode --with-fingerprint --list-key D7C3F131AB2A91F5
+      args = %w{--with-colons --with-fingerprint --list-keys}
       args.concat need_to_learn
       (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', args, true)
 
