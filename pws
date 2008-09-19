@@ -219,7 +219,7 @@ class GroupConfig
       trusted.push line
     end
 
-    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, %w{}, true)
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, %w{})
     goodsig = false
     validsig = nil
     statustxt.split("\n").each do |line|
@@ -237,6 +237,11 @@ class GroupConfig
 
     if not trusted.include?(validsig)
       STDERR.puts ".users file is signed by #{validsig} which is not in ~/.pws-trusted-users"
+      exit(1)
+    end
+
+    if not exitstatus==0
+      STDERR.puts "gpg verify failed for .users file"
       exit(1)
     end
 
