@@ -231,7 +231,9 @@ class GroupConfig
     end
 
     if not goodsig
-      STDERR.puts ".users file is not signed properly.  GnuPG said on stderr:"
+      STDERR.puts ".users file is not signed properly.  GnuPG said on stdout:"
+      STDERR.puts outtxt
+      STDERR.puts "and on stderr:"
       STDERR.puts stderrtxt
       STDERR.puts "and via statusfd:"
       STDERR.puts statustxt
