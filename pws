@@ -436,6 +436,7 @@ class EncryptedFile
   def encrypt(content, recipients)
     args = recipients.collect{ |r| "--recipient=#{r}"}
     args.push "--trust-model=always"
+    args.push "--armor"
     args.push "--encrypt"
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
 
