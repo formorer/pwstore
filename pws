@@ -327,7 +327,6 @@ class GroupConfig
 
         still_contains_groups = false
         group['members_to_do'].clone.each do |member|
-          puts "member: #{member}"
           if is_group(member)
             if @groups[member]['members_to_do'].size == 0
               group['keys'].concat @groups[member]['keys']
