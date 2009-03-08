@@ -368,6 +368,10 @@ class GroupConfig
     end
     return ok, fprs.uniq
   end
+
+  def get_users()
+    return @users
+  end
 end
 
 class EncryptedFile
@@ -436,6 +440,7 @@ class EncryptedFile
   def encrypt(content, recipients)
     args = recipients.collect{ |r| "--recipient=#{r}"}
     args.push "--trust-model=always"
+    args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
     args.push "--armor"
     args.push "--encrypt"
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
@@ -668,10 +673,57 @@ class Ed
   end
 end
 
+class KeyringUpdater
+  def help(parser, code=0, io=STDOUT)
+    io.puts "Usage: #{$program_name} update-keyring [<keyserver>]"
+    io.puts parser.summarize
+    io.puts "Updates the local .keyring file"
+    exit(code)
+  end
+
+  def initialize()
+    ARGV.options do |opts|
+      opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.parse!
+    end
+    help(ARGV.options, 1, STDERR) if ARGV.length > 1
+    keyserver = ARGV.shift
+    keyserver = 'subkeys.pgp.net' unless keyserver
+
+    groupconfig = GroupConfig.new
+    users = groupconfig.get_users()
+    args = %w{--with-colons --no-options --no-default-keyring --keyring=./.keyring}
+
+    system('touch', '.keyring')
+    users.each_pair() do |uid, keyid|
+      cmd = args.clone()
+      cmd << "--keyserver=#{keyserver}"
+      cmd << "--recv-keys"
+      cmd << keyid
+      puts "Fetching key for #{uid}"
+      (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', cmd)
+      unless (statustxt =~ /^\[GNUPG:\] IMPORT_OK /)
+        STDERR.puts "Warning: did not find IMPORT_OK token in status output"
+        STDERR.puts "gpg exited with exit code #{ecode})"
+        STDERR.puts "Command was gpg #{cmd.join(' ')}"
+        STDERR.puts "stdout was #{outtxt}"
+        STDERR.puts "stderr was #{stderrtxt}"
+        STDERR.puts "statustxt was #{statustxt}"
+      end
+
+      cmd = args.clone()
+      cmd << '--batch' << '--edit' << keyid << 'minimize' << 'save'
+      (outtxt, stderrtxt, statustxt, ecode) = GnuPG.gpgcall('', cmd)
+    end
+
+
+  end
+end
 
 def help(code=0, io=STDOUT)
   io.puts "Usage: #{$program_name} ed"
   io.puts "       #{$program_name} ls"
+  io.puts "       #{$program_name} update-keyring"
   io.puts "       #{$program_name} help"
   io.puts "Call #{$program_name} <command> --help for additional options/parameters"
   exit(code)
@@ -682,6 +734,7 @@ def parse_command
   case ARGV.shift
     when 'ls': Ls.new
     when 'ed': Ed.new
+    when 'update-keyring': KeyringUpdater.new
     when 'help': 
       case ARGV.length
         when 0: help
