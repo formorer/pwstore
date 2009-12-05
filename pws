@@ -90,7 +90,12 @@ class GnuPG
       STDIN.reopen(inR)
       STDOUT.reopen(outW)
       STDERR.reopen(errW)
-      exec(GNUPG, "--status-fd=#{statW.fileno}",  *args)
+      begin
+        exec(GNUPG, "--status-fd=#{statW.fileno}",  *args)
+      rescue Exception => e
+        outW.puts("[PWSEXECERROR]: #{e}")
+        exit(1)
+      end
       raise ("Calling gnupg failed")
     end
     inR.close
@@ -102,6 +107,10 @@ class GnuPG
     throw "Unexpected pid: #{pid} vs #{wpid}" unless pid == wpid
     throw "Process has not exited!?" unless status.exited?
     throw "gpg call did not exit sucessfully" if (require_success and status.exitstatus != 0)
+    if m=/^\[PWSEXECERROR\]: (.*)/.match(outtxt) then
+      STDERR.puts "Could not run GnuPG: #{m[1]}"
+      exit(1)
+    end
     return outtxt, stderrtxt, statustxt, status.exitstatus
   end
 
