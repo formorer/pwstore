@@ -613,15 +613,27 @@ class Ed
         proceed = read_input("Warning: Editor did not exit successfully (exit code #{status.exitstatus}.  Proceed?")
         exit(0) unless proceed
       end
-      tempfile.seek(0, IO::SEEK_SET)
-      content = tempfile.read
 
-      # zero the file
+      # some editors do not write new content in place, but instead
+      # make a new file and more it in the old file's place.
+      begin
+        reopened = File.open(tempfile.path, "r+")
+      rescue Exception => e
+        STDERR.puts e
+        exit(1)
+      end
+      content = reopened.read
+
+      # zero the file, well, both of them.
       newsize = content.length
-      tempfile.seek(0, IO::SEEK_SET)
       clearsize = (newsize > oldsize) ? newsize : oldsize
-      tempfile.print "\0"*clearsize
-      tempfile.fsync
+
+      [tempfile, reopened].each do |f|
+        f.seek(0, IO::SEEK_SET)
+        f.print "\0"*clearsize
+        f.fsync
+      end
+      reopened.close
       tempfile.close(true)
 
       if content.length == 0
