@@ -194,7 +194,11 @@ def read_input(query, default_yes=true)
 
   while true
     print "#{query} #{append} "
-    i = STDIN.readline.chomp.downcase
+    begin
+      i = STDIN.readline.chomp.downcase
+    rescue EOFError
+      return default_yes
+    end
     if i==""
       return default_yes
     elsif i=="y"
