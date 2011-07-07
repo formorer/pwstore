@@ -665,8 +665,8 @@ class Ed
   def initialize()
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
-      opts.on_tail("-n", "--new" , "Edit new file") { |@new| }
-      opts.on_tail("-f", "--force" , "Spawn an editor even if the file is probably not readable") { |@force| }
+      opts.on_tail("-n", "--new" , "Edit new file") { |new| @new=new }
+      opts.on_tail("-f", "--force" , "Spawn an editor even if the file is probably not readable") { |force| @force=force }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length != 1
@@ -757,13 +757,13 @@ end
 
 def parse_command
   case ARGV.shift
-    when 'ls': Ls.new
-    when 'ed': Ed.new
-    when 'update-keyring': KeyringUpdater.new
-    when 'help': 
+    when 'ls' then Ls.new
+    when 'ed' then Ed.new
+    when 'update-keyring' then KeyringUpdater.new
+    when 'help' then
       case ARGV.length
-        when 0: help
-        when 1:
+        when 0 then help
+        when 1 then
           ARGV.push "--help"
           parse_command
         else help(1, STDERR)
