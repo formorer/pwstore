@@ -1,17 +1,20 @@
+introduction
+============
+
+The pws tool allows you to store passwords (or anything else, really) in
+a set of encrypted files.  Each file can be encrypted to a different set
+of users.  pws helps you with the bookkeeping of which keys to encrypt
+each file to and provides a convinient wrapper to edit protected files.
+
 initialization
 ==============
+First you need a file where your users and group are defined in.  This
+file is named .users.  Lines consist of assignments of the form
+ <username> = <keyfingerprint>
+and
+ @<groupname> = <username>|@<groupname> [, [<username>|@<groupname> ...]
 
-First you need a file where your users and group are defined in.  Therefore
-you need a +.users+ file which is gpg clear signed.  For security reasons the
-fingerpint (+gpg --with-colons --fingerprint keyid+) signer needs to be listed
-in +~/.pws-trusted-users+.
-
----------------------------------
-# cat ~/.pws-trusted-users
-
-#formorer
-6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
----------------------------------
+Lines starting with a # are comments and thus get ignored.
 
 --------------------------------
 cat .users
@@ -20,10 +23,37 @@ cat .users
 # is listed in ~/.pws-trusted-users
 
 formorer   = 6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
-@grml      = formorer
+weasel     = 25FC1614B8F87B52FF2F99B962AF4031C82E0039
+@admins    = formorer, weasel
+
+zobel    = 6B1856428E41EC893D5DBDBB53B1AC6DB11B627B
+maxx     = 30DC1D281D7932F55E673ABB28EEB35A3E8DCCC0
+@vienna = zobel, maxx
+
+@all = @admins, @vienna
 
 # gpg --clear .users && mv .users.asc .users
 --------------------------------
+
+The .users file is designed to live in a SCM repository, such as git,
+alongside all the other encrypted files.  In order to prevent
+unauthorized tampering with the .users file - for tricking somebody to
+re-encrypt data to the wrong key - the .users file needs to be
+PGP-clearsigned with a key from a whitelist.
+
+This whitelist lives in ~/.pws-trusted-users, and simply takes one
+key fingerprint per line:
+
+---------------------------------
+# cat ~/.pws-trusted-users
+
+#formorer
+6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
+---------------------------------
+
+Currently this whitelist is the same for any pws repositories a user
+might have.  A patch to remove this limitation would be nice.
+
 
 adding a new file
 =================
@@ -38,7 +68,6 @@ editing files
 Every file needs a header like:
 
 ------------------------------
-# gpg < file | head -n2
 access: @all
 ------------------------------
 
@@ -47,6 +76,8 @@ You can edit the encrypted file with the pws tool: +pwd ed file+.
 updating the keyring
 ====================
 
-pws uses its own keyring use +pws update-keyring+ to update the internal
-keyring.
+If available as .keyring pws instructs GnuPG to use this keyring in
+addition to the user's default keyrings.  This allows sharing of the
+keyring in the repository.  Use +pws update-keyring+ to
+update/initialize this keyring.
 
