@@ -6,6 +6,9 @@ a set of encrypted files.  Each file can be encrypted to a different set
 of users.  pws helps you with the bookkeeping of which keys to encrypt
 each file to and provides a convinient wrapper to edit protected files.
 
+In the intended use the directory with the encrypted passwords would be
+under SCM control and shared with other people who need access.
+
 initialization
 ==============
 First you need a file where your users and group are defined in.  This
