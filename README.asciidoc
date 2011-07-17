@@ -1,5 +1,11 @@
+pwstore documentation
+=====================
+Peter Palfrader, Alexander Wirt
+v0.1 July 2011
+
+
 introduction
-============
+------------
 
 The pws tool allows you to store passwords (or anything else, really) in
 a set of encrypted files.  Each file can be encrypted to a different set
@@ -10,7 +16,8 @@ In the intended use the directory with the encrypted passwords would be
 under SCM control and shared with other people who need access.
 
 initialization
-==============
+--------------
+
 First you need a file where your users and group are defined in.  This
 file is named .users.  Lines consist of assignments of the form
  <username> = <keyfingerprint>
@@ -57,14 +64,14 @@ might have.  A patch to remove this limitation would be nice.
 
 
 adding a new file
-=================
+-----------------
 
 -----------------------------
 % pws ed -n file
 -----------------------------
 
 editing files
-=============
+-------------
 
 Every file needs a header like:
 
@@ -75,7 +82,7 @@ access: @admins, maxx
 You can edit the encrypted file with the pws tool: +pws ed file+.
 
 updating the keyring
-====================
+--------------------
 
 If available as .keyring pws instructs GnuPG to use this keyring in
 addition to the user's default keyrings.  This allows sharing of the
