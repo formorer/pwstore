@@ -1,0 +1,52 @@
+initialization
+==============
+
+First you need a file where your users and group are defined in.  Therefore
+you need a +.users+ file which is gpg clear signed.  For security reasons the
+fingerpint (+gpg --with-colons --fingerprint keyid+) signer needs to be listed
+in +~/.pws-trusted-users+.
+
+---------------------------------
+# cat ~/.pws-trusted-users
+
+#formorer
+6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
+---------------------------------
+
+--------------------------------
+cat .users
+
+# This file needs to be gpg signed by a key whose fingerprint
+# is listed in ~/.pws-trusted-users
+
+formorer   = 6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
+@grml      = formorer
+
+# gpg --clear .users && mv .users.asc .users
+--------------------------------
+
+adding a new file
+=================
+
+-----------------------------
+# pws ed -n file
+-----------------------------
+
+editing files
+=============
+
+Every file needs a header like:
+
+------------------------------
+# gpg < file | head -n2
+access: @all
+------------------------------
+
+You can edit the encrypted file with the pws tool: +pwd ed file+.
+
+updating the keyring
+====================
+
+pws uses its own keyring use +pws update-keyring+ to update the internal
+keyring.
+
