@@ -18,6 +18,9 @@ a set of encrypted files.  Each file can be encrypted to a different set
 of users.  pws helps you with the bookkeeping of which keys to encrypt
 each file to and provides a convinient wrapper to edit protected files.
 
+In the intended use the directory with the encrypted passwords would be
+under SCM control and shared with other people who need access.
+
 initialization
 --------------
 
@@ -25,13 +28,12 @@ First you need a file where your users and group are defined in.  This
 file is named .users.  Lines consist of assignments of the form
  <username> = <keyfingerprint>
 and
- @<groupname> = <username>|@<groupname> [, [<username>|@<groupname> ...]
+ @<groupname> = <username>|@<groupname> [, <username>|@<groupname> ...]
 
 Lines starting with a # are comments and thus get ignored.
 
 --------------------------------
-cat .users
-
+% cat .users
 # This file needs to be gpg signed by a key whose fingerprint
 # is listed in ~/.pws-trusted-users
 
@@ -58,8 +60,7 @@ This whitelist lives in ~/.pws-trusted-users, and simply takes one
 key fingerprint per line:
 
 ---------------------------------
-# cat ~/.pws-trusted-users
-
+% cat ~/.pws-trusted-users
 #formorer
 6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
 ---------------------------------
@@ -72,7 +73,7 @@ adding a new file
 -----------------
 
 -----------------------------
-# pws ed -n file
+% pws ed -n file
 -----------------------------
 
 editing files
@@ -81,10 +82,10 @@ editing files
 Every file needs a header like:
 
 ------------------------------
-access: @all
+access: @admins, maxx
 ------------------------------
 
-You can edit the encrypted file with the pws tool: +pwd ed file+.
+You can edit the encrypted file with the pws tool: +pws ed file+.
 
 updating the keyring
 --------------------
