@@ -1,11 +1,17 @@
-pwstore documentation
-=====================
-Peter Palfrader, Alexander Wirt
-v0.1 July 2011
+PWS(1)
+======
+:doctype: manpage
 
+NAME
+----
+pws - password store management
 
-introduction
-------------
+SYNOPSIS
+--------
+*pws* 'COMMAND' ['OPTIONS']
+
+DESCRIPTION
+-----------
 
 The pws tool allows you to store passwords (or anything else, really) in
 a set of encrypted files.  Each file can be encrypted to a different set
@@ -88,4 +94,9 @@ If available as .keyring pws instructs GnuPG to use this keyring in
 addition to the user's default keyrings.  This allows sharing of the
 keyring in the repository.  Use +pws update-keyring+ to
 update/initialize this keyring.
+
+
+AUTHOR
+------
+Peter Palfrader <peter@palfrader.org>
 
