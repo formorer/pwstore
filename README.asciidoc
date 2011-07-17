@@ -60,7 +60,7 @@ adding a new file
 =================
 
 -----------------------------
-# pws ed -n file
+% pws ed -n file
 -----------------------------
 
 editing files
@@ -69,10 +69,10 @@ editing files
 Every file needs a header like:
 
 ------------------------------
-access: @all
+access: @admins, maxx
 ------------------------------
 
-You can edit the encrypted file with the pws tool: +pwd ed file+.
+You can edit the encrypted file with the pws tool: +pws ed file+.
 
 updating the keyring
 ====================
