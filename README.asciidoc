@@ -20,8 +20,7 @@ and
 Lines starting with a # are comments and thus get ignored.
 
 --------------------------------
-cat .users
-
+% cat .users
 # This file needs to be gpg signed by a key whose fingerprint
 # is listed in ~/.pws-trusted-users
 
@@ -48,8 +47,7 @@ This whitelist lives in ~/.pws-trusted-users, and simply takes one
 key fingerprint per line:
 
 ---------------------------------
-# cat ~/.pws-trusted-users
-
+% cat ~/.pws-trusted-users
 #formorer
 6E3966C1E1D15DB973D05B491E45F8CA9DE23B16
 ---------------------------------
