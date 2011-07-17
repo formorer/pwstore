@@ -22,7 +22,7 @@ First you need a file where your users and group are defined in.  This
 file is named .users.  Lines consist of assignments of the form
  <username> = <keyfingerprint>
 and
- @<groupname> = <username>|@<groupname> [, [<username>|@<groupname> ...]
+ @<groupname> = <username>|@<groupname> [, <username>|@<groupname> ...]
 
 Lines starting with a # are comments and thus get ignored.
 
