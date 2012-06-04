@@ -700,6 +700,68 @@ class Ed
   end
 end
 
+class Get
+  def help(parser, code=0, io=STDOUT)
+    io.puts "Usage: #{$program_name} get <filename> <ypath>"
+    io.puts parser.summarize
+    io.puts "Decrypts the file, fetches a key and outputs it to stdout."
+    io.puts "The file must be in YAML format."
+    io.puts "ypath is an ypath query, typically something like host/users/root"
+    exit(code)
+  end
+
+  def get(filename, what)
+    encrypted_file = EncryptedFile.new(filename, @new)
+    if !encrypted_file.readable
+      STDERR.puts "#{filename} is probably not readable"
+      exit(1)
+    end
+
+    begin
+      yaml = YAML::parse(encrypted_file.decrypt)
+    rescue ArgumentError => e
+      STDERR.puts "Could not parse YAML: #{e.message}"
+      exit(1)
+    end
+    hit = yaml.select(what)[0].transform
+    if hit.nil?
+      STDERR.puts("No such key or invalid YPath expression")
+    elsif hit.respond_to?(:keys)
+      puts "Keys:"
+      puts hit.keys.join("\n")
+    else
+        puts hit
+    end
+  end
+
+  def initialize()
+    ARGV.options do |opts|
+      opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.parse!
+    end
+    help(ARGV.options, 1, STDERR) if ARGV.length != 2
+    filename = ARGV.shift
+    what = ARGV.shift
+
+    if !FileTest.exists?(filename)
+      STDERR.puts "#{filename} does not exist"
+      exit(1)
+    elsif !FileTest.file?(filename)
+      STDERR.puts "#{filename} is not a regular file"
+      exit(1)
+    elsif !FileTest.readable?(filename)
+      STDERR.puts "#{filename} is not accessible (unix perms)"
+      exit(1)
+    end
+
+    dirname = File.dirname(filename)
+    basename = File.basename(filename)
+    Dir.chdir(dirname) {
+      get(basename, what)
+    }
+  end
+end
+
 class KeyringUpdater
   def help(parser, code=0, io=STDOUT)
     io.puts "Usage: #{$program_name} update-keyring [<keyserver>]"
@@ -761,6 +823,7 @@ def parse_command
   case ARGV.shift
     when 'ls' then Ls.new
     when 'ed' then Ed.new
+    when 'get' then Get.new
     when 'update-keyring' then KeyringUpdater.new
     when 'help' then
       case ARGV.length
