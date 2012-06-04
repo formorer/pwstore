@@ -410,10 +410,14 @@ class EncryptedFile
   end
 
   def EncryptedFile.targets(text)
-    metaline = text.split("\n").first
-    m = /^access: (.*)/.match metaline
-    return [] unless m
-    return m[1].strip.split(/[\t ,]+/)
+    text.split("\n").each do |line|
+      if /^#/.match line
+        next
+      end
+      m = /^access: (.*)/.match line
+      return [] unless m
+      return m[1].strip.split(/[\t ,]+/)
+    end
   end
 
 
