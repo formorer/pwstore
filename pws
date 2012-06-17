@@ -31,7 +31,7 @@ require 'yaml'
 Thread.abort_on_exception = true
 
 GNUPG = "/usr/bin/gpg"
-
+GROUP_PATTERN = "@[a-zA-Z0-9-]+"
 $program_name = File.basename($0, '.*')
 
 $editor = ENV['EDITOR']
@@ -297,7 +297,7 @@ class GroupConfig
           exit(1)
         end
         @users[user] = fpr
-      elsif (m = /^(@[a-zA-Z0-9-]+)\s*=\s*(.*)$/.match line)
+      elsif (m = /^(#{GROUP_PATTERN})\s*=\s*(.*)$/.match line)
         group = m[1]
         members = m[2].strip
         if @groups.has_key?(group)
@@ -414,7 +414,7 @@ class EncryptedFile
       if /^#/.match line
         next
       end
-      m = /^access: (.*)/.match line
+      m = /^access: "?(#{GROUP_PATTERN})"?/.match line
       return [] unless m
       return m[1].strip.split(/[\t ,]+/)
     end
