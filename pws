@@ -706,11 +706,11 @@ end
 
 class Get
   def help(parser, code=0, io=STDOUT)
-    io.puts "Usage: #{$program_name} get <filename> <ypath>"
+    io.puts "Usage: #{$program_name} get <filename> <query>"
     io.puts parser.summarize
     io.puts "Decrypts the file, fetches a key and outputs it to stdout."
     io.puts "The file must be in YAML format."
-    io.puts "ypath is an ypath query, typically something like host/users/root"
+    io.puts "query is a query, formatted like host/users/root"
     exit(code)
   end
 
@@ -722,14 +722,21 @@ class Get
     end
 
     begin
-      yaml = YAML::parse(encrypted_file.decrypt)
-    rescue ArgumentError => e
+      yaml = YAML::load(encrypted_file.decrypt)
+    rescue Psych::SyntaxError, ArgumentError => e
       STDERR.puts "Could not parse YAML: #{e.message}"
       exit(1)
     end
-    hit = yaml.select(what)[0].transform
+
+    require 'pp'
+
+    a = what.split("/")
+    hit = yaml
+    a.each do |k|
+      hit = hit[k]
+    end
     if hit.nil?
-      STDERR.puts("No such key or invalid YPath expression")
+      STDERR.puts("No such key or invalid lookup expression")
     elsif hit.respond_to?(:keys)
       puts "Keys:"
       puts hit.keys.join("\n")
