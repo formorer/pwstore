@@ -49,7 +49,7 @@ class GnuPG
   @@my_fprs = nil
   @@keyid_fpr_mapping = {}
 
-  def GnuPG.readwrite3(intxt, infd, stdoutfd, stderrfd, statusfd)
+  def GnuPG.readwrite3(intxt, infd, stdoutfd, stderrfd, statusfd=nil)
     outtxt, stderrtxt, statustxt = ''
     thread_in = Thread.new {
       infd.print intxt
@@ -76,22 +76,26 @@ class GnuPG
     return outtxt, stderrtxt, statustxt
   end
 
-  def GnuPG.gpgcall(intxt, args, require_success = false)
+  def GnuPG.open3call(cmd, intxt, args, require_success = false, do_status=true)
     inR, inW = IO.pipe
     outR, outW = IO.pipe
     errR, errW = IO.pipe
-    statR, statW = IO.pipe
+    statR, statW = IO.pipe if do_status
 
     pid = Kernel.fork do
       inW.close
       outR.close
       errR.close
-      statR.close
+      statR.close if do_status
       STDIN.reopen(inR)
       STDOUT.reopen(outW)
       STDERR.reopen(errW)
       begin
-        exec(GNUPG, "--status-fd=#{statW.fileno}",  *args)
+        if do_status
+          exec(cmd, "--status-fd=#{statW.fileno}",  *args)
+        else
+          exec(cmd, *args)
+        end
       rescue Exception => e
         outW.puts("[PWSEXECERROR]: #{e}")
         exit(1)
@@ -101,17 +105,29 @@ class GnuPG
     inR.close
     outW.close
     errW.close
-    statW.close
-    (outtxt, stderrtxt, statustxt) = readwrite3(intxt, inW, outR, errR, statR);
+    if do_status
+      statW.close
+      (outtxt, stderrtxt, statustxt) = readwrite3(intxt, inW, outR, errR, statR);
+    else
+      (outtxt, stderrtxt) = readwrite3(intxt, inW, outR, errR);
+    end
     wpid, status = Process.waitpid2 pid
     throw "Unexpected pid: #{pid} vs #{wpid}" unless pid == wpid
     throw "Process has not exited!?" unless status.exited?
-    throw "gpg call did not exit sucessfully" if (require_success and status.exitstatus != 0)
+    throw "#{cmd} call did not exit sucessfully" if (require_success and status.exitstatus != 0)
     if m=/^\[PWSEXECERROR\]: (.*)/.match(outtxt) then
       STDERR.puts "Could not run GnuPG: #{m[1]}"
       exit(1)
     end
-    return outtxt, stderrtxt, statustxt, status.exitstatus
+    if do_status
+      return outtxt, stderrtxt, statustxt, status.exitstatus
+    else
+      return outtxt, stderrtxt, status.exitstatus
+    end
+  end
+
+  def GnuPG.gpgcall(intxt, args, require_success = false)
+    return open3call(GNUPG, intxt, args, require_success)
   end
 
   def GnuPG.init_keys()
