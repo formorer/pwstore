@@ -405,17 +405,17 @@ class GroupConfig
   end
 end
 
-class EncryptedFile
+class EncryptedData
   attr_reader :accessible, :encrypted, :readable, :readers
 
-  def EncryptedFile.determine_readable(readers)
+  def EncryptedData.determine_readable(readers)
     GnuPG.get_my_keys.each do |keyid|
       return true if readers.include?(keyid)
     end
     return false
   end
 
-  def EncryptedFile.list_readers(statustxt)
+  def EncryptedData.list_readers(statustxt)
     readers = []
     statustxt.split("\n").each do |line|
       m = /^\[GNUPG:\] ENC_TO ([0-9A-F]+)/.match line
@@ -425,7 +425,7 @@ class EncryptedFile
     return readers
   end
 
-  def EncryptedFile.targets(text)
+  def EncryptedData.targets(text)
     text.split("\n").each do |line|
       if /^#/.match line
         next
@@ -437,35 +437,26 @@ class EncryptedFile
   end
 
 
-  def initialize(filename, new=false)
-    @groupconfig = GroupConfig.new
-    @new = new
-    if @new
-      @readers = []
-    end
+  def initialize(encrypted_content, label)
+    @ignore_decrypt_errors = false
+    @label = label
 
-    @filename = filename
-    unless FileTest.readable?(filename)
-      @accessible = false
-      return
-    end
-    @accessible = true
-    @encrypted_content = File.read(filename)
+    @encrypted_content = encrypted_content
     (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(@encrypted_content, %w{--with-colons --no-options --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
     @encrypted = !(statustxt =~ /\[GNUPG:\] NODATA/)
     if @encrypted
-      @readers = EncryptedFile.list_readers(statustxt)
-      @readable = EncryptedFile.determine_readable(@readers)
+      @readers = EncryptedData.list_readers(statustxt)
+      @readable = EncryptedData.determine_readable(@readers)
     end
   end
 
   def decrypt
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt})
-    if !@new and exitstatus != 0
-      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@filename}.  Proceed?", false)
+    if !@ignore_decrypt_errors and exitstatus != 0
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@label}.  Proceed?", false)
       exit(0) unless proceed
-    elsif !@new and outtxt.length == 0
-      proceed = read_input("Warning: #{@filename} decrypted to an empty file.  Proceed?")
+    elsif !@ignore_decrypt_errors and outtxt.length == 0
+      proceed = read_input("Warning: #{@label} decrypted to an empty file.  Proceed?")
       exit(0) unless proceed
     end
 
@@ -491,12 +482,12 @@ class EncryptedFile
       return false if again
     end
     if outtxt.length == 0
-      tryagain = read_input("Error: #{@filename} encrypted to an empty file.  Edit again (or exit)?")
+      tryagain = read_input("Error: #{@label} encrypted to an empty file.  Edit again (or exit)?")
       return false if tryagain
       exit(0)
     end
     if exitstatus != 0
-      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when encrypting #{@filename}. Said:\n#{stderrtxt}\n#{statustxt}\n\nProceed (or try again)?")
+      proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when encrypting #{@label}. Said:\n#{stderrtxt}\n#{statustxt}\n\nProceed (or try again)?")
       return false unless proceed
     end
 
@@ -505,7 +496,7 @@ class EncryptedFile
 
 
   def determine_encryption_targets(content)
-    targets = EncryptedFile.targets(content)
+    targets = EncryptedData.targets(content)
     if targets.size == 0
       tryagain = read_input("Warning: Did not find targets to encrypt to in header.  Try again (or exit)?", true)
       return false if tryagain
@@ -535,6 +526,29 @@ class EncryptedFile
     end
 
     return true, expanded
+  end
+
+end
+
+class EncryptedFile < EncryptedData
+  def initialize(filename, new=false)
+    @groupconfig = GroupConfig.new
+    @new = new
+    if @new
+      @readers = []
+    end
+
+    @filename = filename
+    unless FileTest.readable?(filename)
+      @accessible = false
+      return
+    end
+    @accessible = true
+
+    @filename = filename
+
+    encrypted_content = File.read(filename)
+    super(encrypted_content, filename)
   end
 
   def write_back(content, targets)
