@@ -850,9 +850,88 @@ class KeyringUpdater
   end
 end
 
+class GitDiff
+  def help(parser, code=0, io=STDOUT)
+    io.puts "Usage: #{$program_name} gitdiff <commit> <file>"
+    io.puts parser.summarize
+    io.puts "Shows a diff between the version of <file> in your directory and the"
+    io.puts "version in git at <commit> (or HEAD).  Requires that your tree be git"
+    io.puts "managed, obviously."
+    exit(code)
+  end
+
+  def check_readable(e, label)
+    if !e.readable && !@force
+      STDERR.puts "#{label} is probably not readable."
+      exit(1)
+    end
+  end
+
+  def get_file_at_commit()
+    label = @commit+':'+@filename
+    (encrypted_content, stderrtxt, exitcode) = GnuPG.open3call('git', '', ['show', label], require_success=true, do_status=false)
+    data = EncryptedData.new(encrypted_content, label)
+    check_readable(data, label)
+    return data.decrypt
+  end
+
+  def get_file_current()
+    data = EncryptedFile.new(@filename)
+    check_readable(data, @filename)
+    return data.decrypt
+  end
+
+  def diff()
+    old = get_file_at_commit()
+    cur = get_file_current()
+
+    t1 = Tempfile.open('pws')
+    t1.puts old
+    t1.flush
+
+    t2 = Tempfile.open('pws')
+    t2.puts cur
+    t2.flush
+
+    system("diff", "-u", t1.path, t2.path)
+
+    t1.seek(0, IO::SEEK_SET)
+    t1.print "\0"*old.length
+    t1.fsync
+    t1.close(true)
+
+    t2.seek(0, IO::SEEK_SET)
+    t2.print "\0"*cur.length
+    t2.fsync
+    t2.close(true)
+  end
+
+  def initialize()
+    ARGV.options do |opts|
+      opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-f", "--force" , "Do it even if the file is probably not readable") { |force| @force=force }
+      opts.parse!
+    end
+
+    if ARGV.length == 1
+      @commit = 'HEAD'
+      @filename = ARGV.shift
+    elsif ARGV.length == 1
+      @commit = ARGV.shift
+      @filename = ARGV.shift
+    else
+      help(ARGV.options, 1, STDERR) 
+    end
+
+    diff()
+  end
+end
+
+
 def help(code=0, io=STDOUT)
   io.puts "Usage: #{$program_name} ed"
   io.puts "       #{$program_name} ls"
+  io.puts "       #{$program_name} gitdiff"
   io.puts "       #{$program_name} update-keyring"
   io.puts "       #{$program_name} help"
   io.puts "Call #{$program_name} <command> --help for additional options/parameters"
@@ -864,6 +943,7 @@ def parse_command
   case ARGV.shift
     when 'ls' then Ls.new
     when 'ed' then Ed.new
+    when 'gitdiff' then GitDiff.new
     when 'get' then Get.new
     when 'update-keyring' then KeyringUpdater.new
     when 'help' then
