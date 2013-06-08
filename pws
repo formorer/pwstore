@@ -232,7 +232,9 @@ class GroupConfig
       trusted.push line
     end
 
-    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, %w{})
+    args = []
+    args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
     goodsig = false
     validsig = nil
     statustxt.split("\n").each do |line|
