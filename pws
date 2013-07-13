@@ -916,7 +916,7 @@ class GitDiff
     if ARGV.length == 1
       @commit = 'HEAD'
       @filename = ARGV.shift
-    elsif ARGV.length == 1
+    elsif ARGV.length == 2
       @commit = ARGV.shift
       @filename = ARGV.shift
     else
