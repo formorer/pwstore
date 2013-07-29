@@ -165,6 +165,7 @@ class GnuPG
       # and does not show elmo's fingerprint in a call like
       # gpg --with-colons --fast-list-mode --with-fingerprint --list-key D7C3F131AB2A91F5
       args = %w{--with-colons --with-fingerprint --list-keys}
+      args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
       args.concat need_to_learn
       (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', args, true)
 
