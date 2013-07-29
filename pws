@@ -32,6 +32,7 @@ Thread.abort_on_exception = true
 
 GNUPG = "/usr/bin/gpg"
 GROUP_PATTERN = "@[a-zA-Z0-9-]+"
+USER_PATTERN = "[a-zA-Z0-9:-]+"
 $program_name = File.basename($0, '.*')
 
 $editor = ENV['EDITOR']
@@ -180,6 +181,7 @@ class GnuPG
       # and does not show elmo's fingerprint in a call like
       # gpg --with-colons --fast-list-mode --with-fingerprint --list-key D7C3F131AB2A91F5
       args = %w{--with-colons --with-fingerprint --list-keys}
+      args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
       args.concat need_to_learn
       (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall('', args, true)
 
@@ -305,7 +307,7 @@ class GroupConfig
       lno = lno+1
       next if line =~ /^$/
       next if line =~ /^#/
-      if (m = /^([a-zA-Z0-9:-]+)\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
+      if (m = /^(#{USER_PATTERN})\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
         user = m[1]
         fpr = m[2]
         if @users.has_key?(user)
@@ -430,7 +432,7 @@ class EncryptedData
       if /^#/.match line
         next
       end
-      m = /^access: "?(#{GROUP_PATTERN})"?/.match line
+      m = /^access: "?((?:(?:#{GROUP_PATTERN}|#{USER_PATTERN}),?\s*)+)"?/.match line
       return [] unless m
       return m[1].strip.split(/[\t ,]+/)
     end
@@ -740,7 +742,7 @@ class Get
     io.puts parser.summarize
     io.puts "Decrypts the file, fetches a key and outputs it to stdout."
     io.puts "The file must be in YAML format."
-    io.puts "query is a query, formatted like host/users/root"
+    io.puts "query is a query, formatted like /host/users/root"
     exit(code)
   end
 
@@ -760,8 +762,16 @@ class Get
 
     require 'pp'
 
-    a = what.split("/")
+    a = what.split("/")[1..-1]
     hit = yaml
+    if a.nil?
+      # q = /, so print top level keys
+      puts "Keys:"
+      hit.keys.each do |k|
+        puts "- #{k}"
+      end
+      return
+    end
     a.each do |k|
       hit = hit[k]
     end
@@ -769,7 +779,9 @@ class Get
       STDERR.puts("No such key or invalid lookup expression")
     elsif hit.respond_to?(:keys)
       puts "Keys:"
-      puts hit.keys.join("\n")
+      hit.keys.each do |k|
+        puts "- #{k}"
+      end
     else
         puts hit
     end
