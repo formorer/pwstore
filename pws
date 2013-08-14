@@ -736,6 +736,19 @@ class Ed
   end
 end
 
+class Reencrypt < Ed
+  def help(parser, code=0, io=STDOUT)
+    io.puts "Usage: #{$program_name} ed <filename>"
+    io.puts parser.summarize
+    io.puts "Reencrypts the file (useful for changed user lists or keys)"
+    exit(code)
+  end
+  def initialize()
+    $editor = '/bin/true'
+    super
+  end
+end
+
 class Get
   def help(parser, code=0, io=STDOUT)
     io.puts "Usage: #{$program_name} get <filename> <query>"
@@ -942,6 +955,7 @@ end
 
 def help(code=0, io=STDOUT)
   io.puts "Usage: #{$program_name} ed"
+  io.puts "Usage: #{$program_name} rc"
   io.puts "       #{$program_name} ls"
   io.puts "       #{$program_name} gitdiff"
   io.puts "       #{$program_name} update-keyring"
@@ -955,6 +969,7 @@ def parse_command
   case ARGV.shift
     when 'ls' then Ls.new
     when 'ed' then Ed.new
+    when 'rc' then Reencrypt.new
     when 'gitdiff' then GitDiff.new
     when 'get' then Get.new
     when 'update-keyring' then KeyringUpdater.new
