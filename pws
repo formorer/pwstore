@@ -429,7 +429,7 @@ class EncryptedData
 
   def EncryptedData.targets(text)
     text.split("\n").each do |line|
-      if /^#/.match line
+      if /^(#|---)/.match line
         next
       end
       m = /^access: "?((?:(?:#{GROUP_PATTERN}|#{USER_PATTERN}),?\s*)+)"?/.match line
