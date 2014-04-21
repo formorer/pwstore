@@ -31,8 +31,8 @@ require 'yaml'
 Thread.abort_on_exception = true
 
 GNUPG = "/usr/bin/gpg"
-GROUP_PATTERN = "@[a-zA-Z0-9-]+"
-USER_PATTERN = "[a-zA-Z0-9:-]+"
+GROUP_PATTERN = "@[a-zA-Z0-9@.\-]+"
+USER_PATTERN = "[a-zA-Z0-9:@.\-]+"
 $program_name = File.basename($0, '.*')
 
 $editor = ENV['EDITOR']
@@ -307,14 +307,8 @@ class GroupConfig
       lno = lno+1
       next if line =~ /^$/
       next if line =~ /^#/
-      if (m = /^(#{USER_PATTERN})\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
-        user = m[1]
-        fpr = m[2]
-        if @users.has_key?(user)
-          STDERR.puts "User #{user} redefined at line #{lno}!"
-          exit(1)
-        end
-        @users[user] = fpr
+      if false
+        # nothing
       elsif (m = /^(#{GROUP_PATTERN})\s*=\s*(.*)$/.match line)
         group = m[1]
         members = m[2].strip
@@ -324,6 +318,14 @@ class GroupConfig
         end
         members = members.split(/[\t ,]+/)
         @groups[group] = { "members" => members }
+      elsif (m = /^(#{USER_PATTERN})\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
+        user = m[1]
+        fpr = m[2]
+        if @users.has_key?(user)
+          STDERR.puts "User #{user} redefined at line #{lno}!"
+          exit(1)
+        end
+        @users[user] = fpr
       end
     end
   end
