@@ -82,6 +82,11 @@ class GnuPG
     outR, outW = IO.pipe
     errR, errW = IO.pipe
     statR, statW = IO.pipe if do_status
+    statusfd, outputfd = nil, nil
+    inF = nil
+    inO = $stdin
+    outO = $stdout
+    errO = $stderr
 
     pid = Kernel.fork do
       inW.close
@@ -125,6 +130,10 @@ class GnuPG
     else
       return outtxt, stderrtxt, status.exitstatus
     end
+  ensure 
+    $stdin = inO
+    $stdout = outO
+    $stderr = errO
   end
 
   def GnuPG.gpgcall(intxt, args, require_success = false)
