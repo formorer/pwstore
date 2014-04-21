@@ -89,19 +89,21 @@ class GnuPG
     errO = $stderr
 
     pid = Kernel.fork do
+      statusfd = "--status-fd=#{statW.fileno}" if do_status
+      outputfd = "--output=/dev/fd/#{outW.fileno}" #unless intxt.nil? or intxt.empty?
+      inF = "/dev/fd/#{inR.fileno}" unless intxt.nil? or intxt.empty?
+      fullcmd = ([cmd, statusfd, outputfd]+args+[inF]).compact
+      errO.puts "Command1: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}"
       inW.close
       outR.close
       errR.close
       statR.close if do_status
-      STDIN.reopen(inR)
-      STDOUT.reopen(outW)
+      #STDIN.reopen(inR)
+      STDOUT.reopen(outW) #unless intxt.nil? or intxt.empty?
       STDERR.reopen(errW)
       begin
-        if do_status
-          exec(cmd, "--status-fd=#{statW.fileno}",  *args)
-        else
-          exec(cmd, *args)
-        end
+        #errO.puts "Command2: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}"
+        exec(*fullcmd)
       rescue Exception => e
         outW.puts("[PWSEXECERROR]: #{e}")
         exit(1)
@@ -184,7 +186,8 @@ class GnuPG
   # this is to load the keys we will soon be asking about into
   # our keyid-fpr-mapping hash
   def GnuPG.learn_fingerprints_from_keyids(keyids)
-    need_to_learn = keyids.reject{ |k| @@keyid_fpr_mapping.has_key?(k) }
+    need_to_learn = []
+    need_to_learn = keyids.reject{ |k| @@keyid_fpr_mapping.has_key?(k) unless k.nil? } unless keyids.nil?
     if need_to_learn.size > 0
       # we can't use --fast-list-mode here because GnuPG is broken
       # and does not show elmo's fingerprint in a call like
@@ -261,6 +264,8 @@ class GroupConfig
 
     args = []
     args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
+    args.push '--decrypt'
+    args.push '--yes'
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
     goodsig = false
     validsig = nil
@@ -453,6 +458,7 @@ class EncryptedData
   def initialize(encrypted_content, label)
     @ignore_decrypt_errors = false
     @label = label
+    @readers = []
 
     @encrypted_content = encrypted_content
     (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(@encrypted_content, %w{--with-colons --no-options --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
@@ -464,7 +470,7 @@ class EncryptedData
   end
 
   def decrypt
-    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt})
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt --yes --no-batch})
     if !@ignore_decrypt_errors and exitstatus != 0
       proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@label}.  Proceed?", false)
       exit(0) unless proceed
@@ -482,6 +488,7 @@ class EncryptedData
     args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
     args.push "--armor"
     args.push "--encrypt"
+    args.push "--yes"
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
 
     invalid = []
