@@ -47,7 +47,7 @@ maxx     = 30DC1D281D7932F55E673ABB28EEB35A3E8DCCC0
 
 @all = @admins, @vienna
 
-# gpg --clear .users && mv .users.asc .users
+# gpg --clearsign .users && mv .users.asc .users
 --------------------------------
 
 The .users file is designed to live in a SCM repository, such as git,
@@ -68,6 +68,12 @@ key fingerprint per line:
 Currently this whitelist is the same for any pws repositories a user
 might have.  A patch to remove this limitation would be nice.
 
+listing files
+-----------------
+This gives a listing of secure and other files.
+-----------------------------
+% pws ls
+-----------------------------
 
 adding a new file
 -----------------
@@ -86,6 +92,25 @@ access: @admins, maxx
 ------------------------------
 
 You can edit the encrypted file with the pws tool: +pws ed file+.
+
+reencrypting a file
+-------------------
+If your .users has changed, and new users should get access to existing files,
+you can use the reencrypt command.
+
+-----------------------------
+% pws rc file
+-----------------------------
+
+showing keys from a file
+------------------------
+If you store YAML files in PWS, you can request a single key at a time:
+
+------------------------------
+% pws get users.yaml.asc /gannet/root/password
+PASSWORD-IN-YAML-KEY
+------------------------------
+
 
 updating the keyring
 --------------------
