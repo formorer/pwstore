@@ -31,9 +31,10 @@ require 'yaml'
 Thread.abort_on_exception = true
 
 GNUPG = "/usr/bin/gpg"
-GROUP_PATTERN = "@[a-zA-Z0-9-]+"
-USER_PATTERN = "[a-zA-Z0-9:-]+"
+GROUP_PATTERN = "@[a-zA-Z0-9@.\-]+"
+USER_PATTERN = "[a-zA-Z0-9:@.\-]+"
 $program_name = File.basename($0, '.*')
+$DEBUG = false
 
 $editor = ENV['EDITOR']
 if $editor == nil
@@ -82,21 +83,28 @@ class GnuPG
     outR, outW = IO.pipe
     errR, errW = IO.pipe
     statR, statW = IO.pipe if do_status
+    opt_statusfd, opt_output, arg_input = nil, nil, nil
+    inO = $stdin
+    outO = $stdout
+    errO = $stderr
 
     pid = Kernel.fork do
+      opt_output = "/dev/fd/#{outW.fileno}"
+      arg_input = "/dev/fd/#{inR.fileno}" unless intxt.nil? or intxt.empty?
+      File.unlink(*([arg_input,opt_output].compact.select{ |f| File.file?(f) }))
+      opt_statusfd = "--status-fd=#{statW.fileno}" if do_status
+      opt_output = "--output=#{opt_output}"
+      fullcmd = ([cmd, opt_statusfd, opt_output]+args+[arg_input]).compact
+      errO.puts "DebugCommand: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}" if $DEBUG
       inW.close
       outR.close
       errR.close
       statR.close if do_status
-      STDIN.reopen(inR)
+      #STDIN.reopen(inR)
       STDOUT.reopen(outW)
       STDERR.reopen(errW)
       begin
-        if do_status
-          exec(cmd, "--status-fd=#{statW.fileno}",  *args)
-        else
-          exec(cmd, *args)
-        end
+        exec(*fullcmd)
       rescue Exception => e
         outW.puts("[PWSEXECERROR]: #{e}")
         exit(1)
@@ -125,6 +133,10 @@ class GnuPG
     else
       return outtxt, stderrtxt, status.exitstatus
     end
+  ensure 
+    $stdin = inO
+    $stdout = outO
+    $stderr = errO
   end
 
   def GnuPG.gpgcall(intxt, args, require_success = false)
@@ -175,7 +187,8 @@ class GnuPG
   # this is to load the keys we will soon be asking about into
   # our keyid-fpr-mapping hash
   def GnuPG.learn_fingerprints_from_keyids(keyids)
-    need_to_learn = keyids.reject{ |k| @@keyid_fpr_mapping.has_key?(k) }
+    need_to_learn = []
+    need_to_learn = keyids.reject{ |k| @@keyid_fpr_mapping.has_key?(k) unless k.nil? } unless keyids.nil?
     if need_to_learn.size > 0
       # we can't use --fast-list-mode here because GnuPG is broken
       # and does not show elmo's fingerprint in a call like
@@ -252,6 +265,8 @@ class GroupConfig
 
     args = []
     args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
+    args.push '--decrypt'
+    args.push '--yes'
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
     goodsig = false
     validsig = nil
@@ -307,14 +322,8 @@ class GroupConfig
       lno = lno+1
       next if line =~ /^$/
       next if line =~ /^#/
-      if (m = /^(#{USER_PATTERN})\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
-        user = m[1]
-        fpr = m[2]
-        if @users.has_key?(user)
-          STDERR.puts "User #{user} redefined at line #{lno}!"
-          exit(1)
-        end
-        @users[user] = fpr
+      if false
+        # nothing
       elsif (m = /^(#{GROUP_PATTERN})\s*=\s*(.*)$/.match line)
         group = m[1]
         members = m[2].strip
@@ -324,6 +333,14 @@ class GroupConfig
         end
         members = members.split(/[\t ,]+/)
         @groups[group] = { "members" => members }
+      elsif (m = /^(#{USER_PATTERN})\s*=\s*([0-9A-Fa-f]{40})\s*$/.match line)
+        user = m[1]
+        fpr = m[2]
+        if @users.has_key?(user)
+          STDERR.puts "User #{user} redefined at line #{lno}!"
+          exit(1)
+        end
+        @users[user] = fpr
       end
     end
   end
@@ -442,6 +459,7 @@ class EncryptedData
   def initialize(encrypted_content, label)
     @ignore_decrypt_errors = false
     @label = label
+    @readers = []
 
     @encrypted_content = encrypted_content
     (outtxt, stderrtxt, statustxt) = GnuPG.gpgcall(@encrypted_content, %w{--with-colons --no-options --no-default-keyring --secret-keyring=/dev/null --keyring=/dev/null})
@@ -453,7 +471,7 @@ class EncryptedData
   end
 
   def decrypt
-    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt})
+    (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(@encrypted_content, %w{--decrypt --yes --no-batch})
     if !@ignore_decrypt_errors and exitstatus != 0
       proceed = read_input("Warning: gpg returned non-zero exit status #{exitstatus} when decrypting #{@label}.  Proceed?", false)
       exit(0) unless proceed
@@ -471,6 +489,7 @@ class EncryptedData
     args.push "--keyring=./.keyring" if FileTest.exists?(".keyring")
     args.push "--armor"
     args.push "--encrypt"
+    args.push "--yes"
     (outtxt, stderrtxt, statustxt, exitstatus) = GnuPG.gpgcall(content, args)
 
     invalid = []
@@ -594,6 +613,8 @@ class Ls
           puts "(dir)      #{filename}" if (@all >= 2)
         elsif !stat.file?
           puts "(other)    #{filename}" if (@all >= 2)
+        elsif stat.zero?
+          puts "(empty)    #{filename}" if (@all >= 2)
         else
           f = EncryptedFile.new(filename)
           if !f.accessible
@@ -615,6 +636,7 @@ class Ls
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
       opts.on_tail("-a", "--all" , "Show all files (use up to 3 times to show even more than all)") { @all = @all+1 }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
 
@@ -705,6 +727,7 @@ class Ed
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
       opts.on_tail("-n", "--new" , "Edit new file") { |new| @new=new }
       opts.on_tail("-f", "--force" , "Spawn an editor even if the file is probably not readable") { |force| @force=force }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length != 1
@@ -738,7 +761,7 @@ end
 
 class Reencrypt < Ed
   def help(parser, code=0, io=STDOUT)
-    io.puts "Usage: #{$program_name} ed <filename>"
+    io.puts "Usage: #{$program_name} rc <filename>"
     io.puts parser.summarize
     io.puts "Reencrypts the file (useful for changed user lists or keys)"
     exit(code)
@@ -803,6 +826,7 @@ class Get
   def initialize()
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length != 2
@@ -839,6 +863,7 @@ class KeyringUpdater
   def initialize()
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length > 1
@@ -935,6 +960,7 @@ class GitDiff
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
       opts.on_tail("-f", "--force" , "Do it even if the file is probably not readable") { |force| @force=force }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
 
@@ -957,6 +983,7 @@ def help(code=0, io=STDOUT)
   io.puts "Usage: #{$program_name} ed"
   io.puts "Usage: #{$program_name} rc"
   io.puts "       #{$program_name} ls"
+  io.puts "       #{$program_name} get"
   io.puts "       #{$program_name} gitdiff"
   io.puts "       #{$program_name} update-keyring"
   io.puts "       #{$program_name} help"
