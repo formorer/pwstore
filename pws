@@ -613,6 +613,8 @@ class Ls
           puts "(dir)      #{filename}" if (@all >= 2)
         elsif !stat.file?
           puts "(other)    #{filename}" if (@all >= 2)
+        elsif stat.zero?
+          puts "(empty)    #{filename}" if (@all >= 2)
         else
           f = EncryptedFile.new(filename)
           if !f.accessible
