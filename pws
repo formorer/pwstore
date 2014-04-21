@@ -83,17 +83,18 @@ class GnuPG
     outR, outW = IO.pipe
     errR, errW = IO.pipe
     statR, statW = IO.pipe if do_status
-    statusfd, outputfd = nil, nil
-    inF = nil
+    opt_statusfd, opt_output, arg_input = nil, nil, nil
     inO = $stdin
     outO = $stdout
     errO = $stderr
 
     pid = Kernel.fork do
-      statusfd = "--status-fd=#{statW.fileno}" if do_status
-      outputfd = "--output=/dev/fd/#{outW.fileno}"
-      inF = "/dev/fd/#{inR.fileno}" unless intxt.nil? or intxt.empty?
-      fullcmd = ([cmd, statusfd, outputfd]+args+[inF]).compact
+      opt_output = "/dev/fd/#{outW.fileno}"
+      arg_input = "/dev/fd/#{inR.fileno}" unless intxt.nil? or intxt.empty?
+      File.unlink(*([arg_input,opt_output].compact.select{ |f| File.file?(f) }))
+      opt_statusfd = "--status-fd=#{statW.fileno}" if do_status
+      opt_output = "--output=#{opt_output}"
+      fullcmd = ([cmd, opt_statusfd, opt_output]+args+[arg_input]).compact
       errO.puts "DebugCommand: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}" if $DEBUG
       inW.close
       outR.close
