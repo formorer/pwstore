@@ -34,6 +34,7 @@ GNUPG = "/usr/bin/gpg"
 GROUP_PATTERN = "@[a-zA-Z0-9@.\-]+"
 USER_PATTERN = "[a-zA-Z0-9:@.\-]+"
 $program_name = File.basename($0, '.*')
+$DEBUG = false
 
 $editor = ENV['EDITOR']
 if $editor == nil
@@ -90,19 +91,18 @@ class GnuPG
 
     pid = Kernel.fork do
       statusfd = "--status-fd=#{statW.fileno}" if do_status
-      outputfd = "--output=/dev/fd/#{outW.fileno}" #unless intxt.nil? or intxt.empty?
+      outputfd = "--output=/dev/fd/#{outW.fileno}"
       inF = "/dev/fd/#{inR.fileno}" unless intxt.nil? or intxt.empty?
       fullcmd = ([cmd, statusfd, outputfd]+args+[inF]).compact
-      errO.puts "Command1: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}"
+      errO.puts "DebugCommand: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}" if $DEBUG
       inW.close
       outR.close
       errR.close
       statR.close if do_status
       #STDIN.reopen(inR)
-      STDOUT.reopen(outW) #unless intxt.nil? or intxt.empty?
+      STDOUT.reopen(outW)
       STDERR.reopen(errW)
       begin
-        #errO.puts "Command2: #{fullcmd.map{|s| "'"+s+"'" }.join(" ")}"
         exec(*fullcmd)
       rescue Exception => e
         outW.puts("[PWSEXECERROR]: #{e}")
@@ -633,6 +633,7 @@ class Ls
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
       opts.on_tail("-a", "--all" , "Show all files (use up to 3 times to show even more than all)") { @all = @all+1 }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
 
@@ -723,6 +724,7 @@ class Ed
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
       opts.on_tail("-n", "--new" , "Edit new file") { |new| @new=new }
       opts.on_tail("-f", "--force" , "Spawn an editor even if the file is probably not readable") { |force| @force=force }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length != 1
@@ -821,6 +823,7 @@ class Get
   def initialize()
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length != 2
@@ -857,6 +860,7 @@ class KeyringUpdater
   def initialize()
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
     help(ARGV.options, 1, STDERR) if ARGV.length > 1
@@ -953,6 +957,7 @@ class GitDiff
     ARGV.options do |opts|
       opts.on_tail("-h", "--help" , "Display this help screen") { help(opts) }
       opts.on_tail("-f", "--force" , "Do it even if the file is probably not readable") { |force| @force=force }
+      opts.on_tail("-d", "--debug" , "Enable debug output") { |debug| $DEBUG=debug }
       opts.parse!
     end
 
