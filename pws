@@ -278,8 +278,9 @@ class GroupConfig
       end
     end
 
+    usersfile = self.find_users_file()
     if not goodsig
-      STDERR.puts ".users file is not signed properly.  GnuPG said on stdout:"
+      STDERR.puts "#{usersfile} file is not signed properly.  GnuPG said on stdout:"
       STDERR.puts outtxt
       STDERR.puts "and on stderr:"
       STDERR.puts stderrtxt
@@ -289,21 +290,26 @@ class GroupConfig
     end
 
     if not trusted.include?(validsig)
-      STDERR.puts ".users file is signed by #{validsig} which is not in ~/.pws-trusted-users"
+      STDERR.puts "#{usersfile} file is signed by #{validsig} which is not in ~/.pws-trusted-users"
       exit(1)
     end
 
     if not exitstatus==0
-      STDERR.puts "gpg verify failed for .users file"
+      STDERR.puts "gpg verify failed for #{usersfile} file"
       exit(1)
     end
 
     return outtxt
   end
 
+  def find_users_file
+      return %w{.users.asc .users}.find(nil) { |f| FileTest.exists?(f) }
+  end
+
   def parse_file
     begin
-      f = File.open('.users')
+      usersfile = self.find_users_file()
+      f = File.open(usersfile)
     rescue Exception => e
       STDERR.puts e
       exit(1)
@@ -600,8 +606,8 @@ class Ls
     end
     puts "#{dirname}:"
     Dir.chdir(dirname) do
-      unless FileTest.exists?(".users")
-        STDERR.puts "The .users file does not exists here.  This is not a password store, is it?"
+      unless %w{.users .users.asc}.any? { |f| FileTest.exists?(f) }
+        STDERR.puts "The neither .users nor .users.asc exists here. This is not a password store, is it?"
         exit(1)
       end
       dir.sort.each do |filename|
