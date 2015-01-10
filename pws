@@ -79,10 +79,10 @@ class GnuPG
   end
 
   def GnuPG.open3call(cmd, intxt, args, require_success = false, do_status=true)
-    inR, inW = IO.pipe
-    outR, outW = IO.pipe
-    errR, errW = IO.pipe
-    statR, statW = IO.pipe if do_status
+    inR, inW = IO.pipe.each { |fd| fd.close_on_exec = false }
+    outR, outW = IO.pipe.each { |fd| fd.close_on_exec = false }
+    errR, errW = IO.pipe.each { |fd| fd.close_on_exec = false }
+    statR, statW = IO.pipe.each { |fd| fd.close_on_exec = false } if do_status
     opt_statusfd, opt_output, arg_input = nil, nil, nil
     inO = $stdin
     outO = $stdout
@@ -104,7 +104,7 @@ class GnuPG
       STDOUT.reopen(outW)
       STDERR.reopen(errW)
       begin
-        exec(*fullcmd)
+        exec(*fullcmd, :close_others => false)
       rescue Exception => e
         outW.puts("[PWSEXECERROR]: #{e}")
         exit(1)
